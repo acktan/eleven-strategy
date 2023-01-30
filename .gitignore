@@ -125,6 +125,7 @@ venv.bak/
 
 # PyCharm files
 .DS_Store
+.idea/
 
 # Rope project settings
 .ropeproject
