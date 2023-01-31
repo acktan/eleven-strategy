@@ -1,12 +1,13 @@
+from turtle import distance
 import pandas as pd 
 import numpy as np
 import os
 import ast
 import geopandas as gpd
-from shapely.geometry import Point
+import math
+from tqdm import tqdm
 
-
-os.chdir(r"C:\Users\ckunt\OneDrive\Documents\Masters work\HEC\18. Eleven Strategy\eleven-strategy\data")
+# 
 
 csv_files = ['mutations_d75_train_localized.csv',
              'mutations_d77_train_localized.csv',
@@ -55,15 +56,19 @@ class DataLoader():
 
 class DataAugmentation(DataLoader):
     def __init__(self, df: pd.DataFrame) -> None:
-        self.df = df
-        
-    def load_idf_data(self) -> None:
-        """Load geometric data for Ile-de-France
+        """Load external data for Ile-de-France
             
         """
         
+        self.df = df
+
+        #communes & arrondisements
         self.idf_reg = gpd.read_file('communes-dile-de-france-au-01-janvier.shp', ignore_geometry=True).rename(columns={'insee': 'l_codinsee'})
         self.idf_reg['nomcom'] = self.idf_reg['nomcom'].str.encode('ISO-8859-1').str.decode('utf-8')
+        
+        #train stations
+        self.gares = pd.read_json('emplacement-des-gares-idf.json')
+        self.gares[['longitude', 'latitude']] = self.gares.geo_point_2d.apply(pd.Series)
     
     def add_subdivisions(self) -> pd.DataFrame:
         """Adds communes/arrondisements to locations
@@ -73,13 +78,41 @@ class DataAugmentation(DataLoader):
         """
         self.df['l_codinsee'] = self.df['l_codinsee'].astype(float)
         return pd.merge(self.df, self.idf_reg, on='l_codinsee')
+       
+    def count_public_transport_spots(self,
+                                     distance_to_station: int = 200, 
+                                     subdivisons: int = 150) -> pd.DataFrame:
+        """
+        Count the number of public transport spots within 200 meters of each point in df1.
+        
+        Args:
+            subdivisons: split the df into x subdivisions (for memory purposes)
+            
+        Returns:
+            self.df: returns df with transport nearby
+        """
+        coords2 = np.radians(self.gares[['latitude', 'longitude']].to_numpy())
+        lats2, lons2 = coords2[:, 0], coords2[:, 1]
+        
+        sub_dfs = np.array_split(self.df, subdivisons)
+
+        spots = []
+        for i in tqdm(range(subdivisons)):
+            sub_df = sub_dfs[i]
+            sub_coords1 = np.radians(sub_df[['latitude', 'longitude']].to_numpy())
+            lats1, lons1 = sub_coords1[:, 0], sub_coords1[:, 1]
 
 
-dl = DataLoader(csv_files)
-a = dl.combine_clean_files()
-dataAug  = DataAugmentation(a)
-dataAug.load_idf_data()
-merged_df = dataAug.add_subdivisions()
+            a = np.sin((lats2 - lats1[:, None])/2)**2 + \
+                np.cos(lats1[:, None]) * np.cos(lats2) * \
+                np.sin((lons2 - lons1[:, None])/2)**2
 
+            c = 2 * np.arcsin(np.sqrt(a))
+            distances = c * 6371 * 1000
 
+            transport_spots = np.sum(distances <= distance_to_station, axis=1)
+            spots.extend(transport_spots)
 
+            
+        self.df['public_transport_spots'] = spots
+        return self.df
