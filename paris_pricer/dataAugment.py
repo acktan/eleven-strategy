@@ -1,3 +1,4 @@
+from turtle import distance
 import pandas as pd 
 import numpy as np
 import os
@@ -67,7 +68,7 @@ class DataAugmentation(DataLoader):
         
         #train stations
         self.gares = pd.read_json('emplacement-des-gares-idf.json')
-        self.gares[['latitude', 'longitude']] = self.gares.geo_point_2d.apply(pd.Series)
+        self.gares[['longitude', 'latitude']] = self.gares.geo_point_2d.apply(pd.Series)
     
     def add_subdivisions(self) -> pd.DataFrame:
         """Adds communes/arrondisements to locations
@@ -78,40 +79,40 @@ class DataAugmentation(DataLoader):
         self.df['l_codinsee'] = self.df['l_codinsee'].astype(float)
         return pd.merge(self.df, self.idf_reg, on='l_codinsee')
        
-    def count_public_transport_spots(self) -> pd.DataFrame:
+    def count_public_transport_spots(self,
+                                     distance_to_station: int = 200, 
+                                     subdivisons: int = 150) -> pd.DataFrame:
         """
         Count the number of public transport spots within 200 meters of each point in df1.
+        
+        Args:
+            subdivisons: split the df into x subdivisions (for memory purposes)
+            
+        Returns:
+            self.df: returns df with transport nearby
         """
-        coords1 = np.radians(self.df[['latitude', 'longitude']].to_numpy())
         coords2 = np.radians(self.gares[['latitude', 'longitude']].to_numpy())
-        lats1, lons1 = coords1[:, 0], coords1[:, 1]
         lats2, lons2 = coords2[:, 0], coords2[:, 1]
+        
+        sub_dfs = np.array_split(self.df, subdivisons)
+
+        spots = []
+        for i in tqdm(range(subdivisons)):
+            sub_df = sub_dfs[i]
+            sub_coords1 = np.radians(sub_df[['latitude', 'longitude']].to_numpy())
+            lats1, lons1 = sub_coords1[:, 0], sub_coords1[:, 1]
 
 
-        a = np.sin((lats2 - lats1[:, None])/2)**2 + \
-            np.cos(lats1[:, None]) * np.cos(lats2) * \
-            np.sin((lons2 - lons1[:, None])/2)**2
+            a = np.sin((lats2 - lats1[:, None])/2)**2 + \
+                np.cos(lats1[:, None]) * np.cos(lats2) * \
+                np.sin((lons2 - lons1[:, None])/2)**2
 
-        c = 2 * np.arcsin(np.sqrt(a))
-        distances = c * 6371 * 1000
+            c = 2 * np.arcsin(np.sqrt(a))
+            distances = c * 6371 * 1000
 
-        transport_spots = np.sum(distances <= 200, axis=1)
-        self.df['public_transport_spots'] = transport_spots
+            transport_spots = np.sum(distances <= distance_to_station, axis=1)
+            spots.extend(transport_spots)
 
+            
+        self.df['public_transport_spots'] = spots
         return self.df
-
-dl = DataLoader(csv_files)
-df = dl.combine_clean_files()
-dataaug = DataAugmentation(df)
-aug_df = dataaug.add_subdivisions()
-aug_df = dataaug.count_public_transport_spots()
-
-
-gares = pd.read_json('emplacement-des-gares-idf.json')
-gares[['latitude', 'longitude']] = gares.geo_point_2d.apply(pd.Series)
-coords1 = np.radians(aug_df[['latitude', 'longitude']].to_numpy())
-coords2 = np.radians(gares[['latitude', 'longitude']].to_numpy())
-lats1, lons1 = coords1[:, 0], coords1[:, 1]
-lats2, lons2 = coords2[:, 0], coords2[:, 1]
-
-np.sin((lats2 - lats1[:, None])/2)**2
