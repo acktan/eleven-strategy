@@ -27,6 +27,14 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Data
+*.pdf
+*.csv
+*.pkl
+*.xlsx
+data/
+Data/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -50,6 +58,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+tests/
 
 # Translations
 *.mo
@@ -113,6 +122,10 @@ venv.bak/
 # Spyder project settings
 .spyderproject
 .spyproject
+
+# PyCharm files
+.DS_Store
+.idea/
 
 # Rope project settings
 .ropeproject
