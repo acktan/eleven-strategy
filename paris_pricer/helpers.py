@@ -5,6 +5,8 @@ import os
 from typing import Union
 import warnings
 
+warnings.simplefilter('ignore', FutureWarning)
+
 
 class Data:
     @staticmethod
@@ -75,9 +77,41 @@ class Data:
                 dtypes[col] = 'float64'
         return dtypes
 
+    @staticmethod
+    def eval_columns(df: pd.DataFrame, columns: list[Union[str, int]] = None) -> pd.DataFrame:
+        df = df.copy()
+        if columns is None:
+            columns = ['l_codinsee', 'l_section', 'l_idpar', 'l_idparmut', 'l_idlocmut']
+        # Turning the columns from string to lists (applying it all at once does not work because of the NaNs)
+        for col in columns:
+            df.loc[:, col] = df.loc[:, col].apply(eval)
+        return df
+
+    @staticmethod
+    def explode_df(df: pd.DataFrame, columns: list[Union[str, int]] = None) -> pd.DataFrame:
+        """This function explodes (=expands) the DataFrame based on the provided columns."""
+        df = df.copy()
+        if columns is None:
+            # We use 'l_codinsee' and 'l_section' as default values since the other have too many unique values and are
+            # therefore not useful
+            columns = ['l_codinsee', 'l_section']
+
+        # Exploding the columns individually for the same reason as above
+        for col in columns:
+            df = df.explode(column=col)
+        return df
+
     @classmethod
-    def load_df(cls, path: str = None) -> pd.DataFrame:
+    def load_df(cls, path: str = None, explode: bool = True, drop_useless: bool = True) -> pd.DataFrame:
+        """This is the main data loading method"""
         data = cls.load_data(path=path)
         df = pd.concat([data[key] for key in data])
         df = df.astype(dtype=cls.infer_dtypes(df))
+        if explode:
+            df = cls.eval_columns(df)
+            df = cls.explode_df(df)
+        if drop_useless:
+            # These columns are categorical and have mostly unique values
+            useless_columns = ['idmutation', 'idmutinvar', 'idopendata', 'l_idpar', 'l_idparmut', 'l_idlocmut']
+            df = df.loc[:, set(df.columns).difference(useless_columns)]
         return df
