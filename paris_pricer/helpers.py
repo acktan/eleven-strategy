@@ -15,8 +15,8 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer
-import streamlit as st
 
+import ast
 import os
 import pickle
 import re
@@ -123,7 +123,7 @@ class Data:
     def load_df(cls, path: str = None, explode: bool = True, drop_useless: bool = True) -> pd.DataFrame:
         """This is the main data loading method"""
         data = cls.load_csv_files(path=path)
-        df = pd.concat([data[key] for key in data])
+        df = pd.concat([data[key] for key in data], ignore_index=True)
         df = df.astype(dtype=cls.infer_dtypes(df))
         if explode:
             df = cls.eval_columns(df)
@@ -193,13 +193,33 @@ class Data:
             for root, folders, files in os.walk('.'):
                 if file_name in files:
                     path = root
-        return gpd.read_file(f'{path}/{file_name}')
+        gdf = gpd.read_file(f'{path}/{file_name}')
+        gdf['nomcom'] = gdf['nomcom'].str.encode('ISO-8859-1').str.decode('utf-8')
+        return gdf
 
     @staticmethod
     def turn_mutations_df_into_geodf(df: pd.DataFrame, crs: str = 'epsg:4326') -> gpd.GeoDataFrame:
         df = df.copy()
         df['long_lat'] = gpd.GeoSeries(map(Point, zip(df['longitude'], df['latitude'])))
         return gpd.GeoDataFrame(df, geometry='long_lat', crs=crs)
+
+    @staticmethod
+    def calculate_price_by_district(df: pd.DataFrame,
+                                    district: str = 'Épône',
+                                    aggregation_func: str = 'mean') -> float:
+        """This function aggregates the price for the desired district based on the provided aggregation_func."""
+        # Handling the input
+        if not {'nomcom', 'valeurfonc'}.intersection(df.columns):
+            raise ValueError('The dataframe needs the have the following columns: "nomcom" and "valeurfonc"')
+
+        if aggregation_func not in ['mean', 'median', 'min', 'max']:
+            raise ValueError('Value computation does not exist')
+
+        if district == 'All':
+            return eval(f"df['valeurfonc'].{aggregation_func}()")
+
+        agg = df.groupby('nomcom').agg({'valeurfonc': aggregation_func})
+        return agg.loc[district, 'valeurfonc']
 
 
 class Model:

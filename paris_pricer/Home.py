@@ -28,7 +28,6 @@ st.text_input(label='', key='place')
 
 # Retrieving the coordinates of the desired place
 latitude, longitude = scraper.get_coordinates()
-st.map(pd.DataFrame({'lat': [latitude], 'lon': [longitude]}))
 
 # df = Data.load_data_for_model()
 if 'df' not in st.session_state:
@@ -40,7 +39,7 @@ df_distance = st.session_state['df'].pipe(Data.calculate_distance, latitude=lati
 model_data = df_distance.loc[[df_distance['distance'].argmin()], :].head(1).reset_index(drop=True)
 
 # Creating the price predictions for now and for in five years
-columns = st.columns(2)
+columns = st.columns(3)
 with columns[0]:
     current_price = st.session_state['model'].predict(model_data)[0]
     st.metric(label='Current price',
@@ -51,4 +50,12 @@ with columns[1]:
     price_in_five_years = st.session_state['model'].predict(model_data_in_five_years)[0]
     st.metric(label='Price in five years',
               value=f"{price_in_five_years:,.{2}f} €",
-              delta=f'{((price_in_five_years / current_price) * 100):,.{2}f} %')
+              delta=f'{(((price_in_five_years / current_price) - 1) * 100):,.{2}f} %')
+with columns[2]:
+    ecb_five_year_equivalent = current_price * (1.02312) ** 5
+    st.metric(label='ECB bond equivalent',
+              value=f"{ecb_five_year_equivalent:,.{2}f} €",
+              delta=f'{(((ecb_five_year_equivalent / current_price) - 1) * 100):,.{2}f} %')
+
+# Drawing the map
+st.map(pd.DataFrame({'lat': [latitude], 'lon': [longitude]}))
