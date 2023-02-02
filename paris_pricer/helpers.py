@@ -4,7 +4,7 @@ import pandas as pd
 import os
 from typing import Union
 import warnings
-
+from dataAugment import DataLoader, DataAugmentation
 
 class Data:
     @staticmethod
@@ -81,3 +81,17 @@ class Data:
         df = pd.concat([data[key] for key in data])
         df = df.astype(dtype=cls.infer_dtypes(df))
         return df
+
+def get_arr(df: pd.DataFrame,
+            district: str = 'Épône',
+            aggregation_func: str = 'mean') -> float:
+    
+    if 'nomcom' not in df.columns:
+        aug_load = DataAugmentation(df, file_path='../data/')
+        df = aug_load.add_subdivisions()
+    
+    if aggregation_func not in ['mean', 'median', 'min', 'max']:
+        raise ValueError('Value computation does not exist')
+    
+    agg = df.groupby('nomcom').agg(aggregation_func)
+    return agg[agg.index == district]['valeurfonc'].values[0]
