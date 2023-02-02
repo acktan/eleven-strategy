@@ -135,6 +135,11 @@ class DataAugmentation(DataLoader):
         return self.df
     
     def add_crimerate(self) -> pd.DataFrame:
+        """Add crimerate per commune to original dataset
+        
+        Returns: 
+            df: merged dataset on arrondisement and coddep
+        """
         self.df['arrondissement'] = [str(x)[5:7] if str(x).startswith("['75") else np.nan for x in self.df['l_codinsee']]
         self.df['arrondissement'] = self.df['arrondissement'].astype(float)
         return self.df.merge(self.df_crimerate2018, on=['arrondissement','coddep'])
@@ -151,6 +156,11 @@ class DataAugmentation(DataLoader):
         return Point(row["longitude"], row["latitude"])
     
     def add_passoir(self) -> pd.DataFrame:
+        """Add passoir thermique values to original dataset
+        
+        Returns:
+            df: geometrically joined dataset with online data
+        """
         self.df["lat_long"] = self.df.apply(self.convert_to_point, axis=1)
         self.df = gpd.GeoDataFrame(self.df, geometry="lat_long")
         self.df.crs = {'init': 'epsg:4326'}
@@ -177,3 +187,4 @@ df = dl.combine_clean_files()
 dataAug = DataAugmentation(df, file_path='../data/')
 augment_df = dataAug.add_all()
 augment_df.to_csv('augmented_data.csv')
+
