@@ -1,8 +1,24 @@
 from __future__ import annotations
+
+import numpy as np
 import pandas as pd
+from selenium import webdriver
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer
+import streamlit as st
 
 import os
-from typing import Union
+import pickle
+import re
+from typing import Union, Any
 import warnings
 
 warnings.simplefilter('ignore', FutureWarning)
@@ -112,6 +128,154 @@ class Data:
             df = cls.explode_df(df)
         if drop_useless:
             # These columns are categorical and have mostly unique values
-            useless_columns = ['idmutation', 'idmutinvar', 'idopendata', 'l_idpar', 'l_idparmut', 'l_idlocmut']
-            df = df.loc[:, set(df.columns).difference(useless_columns)]
+            useless_columns = ['idmutinvar', 'idopendata', 'l_idpar', 'l_idparmut', 'l_idlocmut']
+            relevant_columns = set(df.columns).difference(useless_columns)
+            df = df.loc[:, [col for col in df.columns if col in relevant_columns]]
         return df
+
+    @classmethod
+    def load_data_for_model(cls, path: str = None, keep_lists: bool = False) -> pd.DataFrame:
+        """This method loads the data without some (for the modeling) useless columns. While the list columns might
+        be useful, encoding them would put major emphasis on them, one therefore has the option to keep them.
+        This method should be extended once feature engineering has been done."""
+        df = cls.load_df(path=path)
+        # We only want to keep the columns that don't have too many unique values and are in a format that lends itself
+        # to a model and that doesn't duplicate information.
+        # 'idmutation' has too many unique values, 'datemut' is in datetime format and the year and month have already
+        # been extracted to distinct columns, the information of 'idnatmut' and 'codtypbien' is contained in other
+        # columns already.
+        relevant_columns = set(df.columns).difference(['idmutation', 'datemut', 'idnatmut', 'codtypbien'])
+        if not keep_lists:
+            relevant_columns = relevant_columns.difference(['l_codinsee', 'l_section'])
+        df = df.loc[:, [col for col in df.columns if col in relevant_columns]]
+
+        return df
+
+    @classmethod
+    def load_sample_df(cls, path: str = None) -> pd.DataFrame:
+        file_name = 'mutations_d77_train_localized.csv'
+        if path is None:
+            for root, folders, files in os.walk('.'):
+                if file_name in files:
+                    path = root
+                    break
+        df = pd.read_csv(f'{path}/{file_name}')
+        df = cls.eval_columns(df)
+        df = cls.explode_df(df)
+        useless_columns = ['idmutinvar', 'idopendata', 'l_idpar', 'l_idparmut', 'l_idlocmut', 'codservch', 'refdoc',
+                           'Unnamed: 0.1', 'Unnamed: 0']
+        relevant_columns = set(df.columns).difference(useless_columns)
+        df = df.loc[:, [col for col in df.columns if col in relevant_columns]]
+        return df
+
+    @staticmethod
+    def remove_outliers_q_based(df: pd.DataFrame, q_lower: float = 0.01, q_upper: float = 0.99) -> pd.DataFrame:
+        """This method filters out records with 'valeurfonc' outliers based on the provided quantiles"""
+        df = df.copy()
+        t_lower = df['valeurfonc'].quantile(q_lower)
+        t_upper = df['valeurfonc'].quantile(q_upper)
+        return df.loc[(df['valeurfonc'] > t_lower) & (df['valeurfonc'] < t_upper), :]
+
+    @staticmethod
+    def calculate_distance(df: pd.DataFrame, latitude, longitude) -> pd.DataFrame:
+        df = df.copy()
+        df.loc[:, 'distance'] = ((df.loc[:, 'latitude'] - latitude) ** 2
+                                 + (df.loc[:, 'longitude'] - longitude) ** 2) ** 0.5
+        return df
+
+
+class Model:
+    @staticmethod
+    def create_pricing_model(df: pd.DataFrame = None, save: bool = True, saving_path: str = '.') -> ExtraTreesRegressor:
+        """This method trains an ExtraTreesRegressor based on df."""
+        if df is None:
+            df = Data.load_data_for_model()
+        target = 'valeurfonc'
+        features = set(df.columns).difference([target])
+
+        X = df.loc[:, [col for col in df.columns if col in features]]
+        y = df.loc[:, target]
+        X_train, X_test, y_train, y_test = train_test_split(X, y)
+
+        # Some features need engineering before we can use them
+        # The date features get a spline transformation
+        # String columns and 'coddep' get a one-hot encoding
+        # Numerical features (except 'coddep') are scaled
+        categorical_preprocessor = Pipeline([('one_hot', OneHotEncoder(sparse=False))])
+        numerical_preprocessor = Pipeline([('scaler', StandardScaler())])
+        date_preprocessor = Pipeline([('spline', SplineTransformer())])
+
+        spline_columns = ['anneemut', 'moismut']
+        one_hot_columns = list(X.select_dtypes('object').columns) + ['libnatmut']
+        coordinate_columns = ['latitude', 'longitude']
+        scaling_columns = [col for col in X.select_dtypes(np.number).columns if col not in spline_columns
+                           + one_hot_columns + coordinate_columns]
+
+        preprocessor = ColumnTransformer([('cat_pre', categorical_preprocessor, one_hot_columns),
+                                          ('num_pre', numerical_preprocessor, scaling_columns),
+                                          ('spline_pre', date_preprocessor, spline_columns)],
+                                         remainder='passthrough')
+        pipe = Pipeline([('preprocessor', preprocessor), ('model', ExtraTreesRegressor(max_depth=35))])
+
+        pipe.fit(X_train, y_train)
+
+        if save:
+            with open(f'{saving_path}/pricing_model.pkl', 'wb') as f:
+                pickle.dump(pipe, f)
+        return pipe
+
+    @staticmethod
+    def load_pricing_model(path: str = '.', file_name: str = 'pricing_model.pkl') -> Any:
+        """This method loads the trained pricing model from the disk."""
+        with open(f'{path}/{file_name}', 'rb') as f:
+            return pickle.load(f)
+
+
+class Scraper:
+    google_maps_url = 'https://www.google.com/maps'
+
+    def __init__(self, webdriver_path: str = None):
+        if webdriver_path is None:
+            for root, folders, files in os.walk('.'):
+                if 'geckodriver' in files:
+                    webdriver_path = f'{root}/geckodriver'
+                    break
+        webdriver_options = Options()
+        webdriver_options.add_argument('--headless')
+        # self.driver = webdriver.Firefox(service=Service(executable_path=webdriver_path), options=webdriver_options)
+        self.driver = webdriver.Firefox(service=Service(executable_path=webdriver_path))
+        self.driver.get(self.google_maps_url)
+        self.remove_cookie_window()
+
+    def remove_cookie_window(self) -> None:
+        """This method removes the cookie window."""
+        reject_button_xpath = '/html/body/c-wiz/div/div/div/div[2]/div[1]/div[3]/div[1]/div[1]/form[1]'
+        reject_button = self.driver.find_element(By.XPATH, reject_button_xpath)
+        reject_button.click()
+
+    def get_coordinates(self) -> tuple[float, float]:
+        """This method returns the x, y coordinates from the URL."""
+        coordinates_found = False
+        while not coordinates_found:
+            coordinates_found = '@' in self.driver.current_url
+        latitude, longitude = re.search(r'@([\d.-]+),([\d.-]+)', self.driver.current_url).groups()
+        return eval(latitude), eval(longitude)
+
+    def search_place_with_url(self, place: str) -> None:
+        url = f"{self.google_maps_url}/place/{place.replace(' ', '+')}"
+        self.driver.get(url)
+
+    def type_search(self, place: str) -> None:
+        search_box = self.driver.find_element(By.ID, 'searchboxinput')
+        search_box.clear()
+        search_box.send_keys(place)
+
+    def get_suggestions(self) -> list[str]:
+        class_name = 'DAdBuc'
+        WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
+        suggestions = self.driver.find_element(By.CLASS_NAME, class_name)
+        suggestions_list = suggestions.text.split('\n')
+        return suggestions_list
+
+    def search(self) -> None:
+        self.driver.find_element(By.ID, 'searchbox-searchbutton').click()
