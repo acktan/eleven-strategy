@@ -3,7 +3,11 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+import os
+
 from helpers import Data
+
+st.write(os.listdir('.'))
 
 if 'df' in st.session_state:
     df = st.session_state['df']

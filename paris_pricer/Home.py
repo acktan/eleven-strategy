@@ -3,8 +3,6 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-import time
-
 from helpers import Data, Model, Scraper
 
 st.set_page_config(page_title='Real estate price estimation')
