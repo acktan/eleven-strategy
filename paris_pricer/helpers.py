@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 from selenium import webdriver
@@ -8,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from shapely.geometry import Point, Polygon
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import train_test_split
@@ -26,7 +28,7 @@ warnings.simplefilter('ignore', FutureWarning)
 
 class Data:
     @staticmethod
-    def load_data(path: str = None) -> dict[str, pd.DataFrame]:
+    def load_csv_files(path: str = None) -> dict[str, pd.DataFrame]:
         """This function loads the csv files Eleven provided us with."""
         if path is None:
             for root, folders, files in os.walk('.'):
@@ -120,7 +122,7 @@ class Data:
     @classmethod
     def load_df(cls, path: str = None, explode: bool = True, drop_useless: bool = True) -> pd.DataFrame:
         """This is the main data loading method"""
-        data = cls.load_data(path=path)
+        data = cls.load_csv_files(path=path)
         df = pd.concat([data[key] for key in data])
         df = df.astype(dtype=cls.infer_dtypes(df))
         if explode:
@@ -182,6 +184,22 @@ class Data:
         df.loc[:, 'distance'] = ((df.loc[:, 'latitude'] - latitude) ** 2
                                  + (df.loc[:, 'longitude'] - longitude) ** 2) ** 0.5
         return df
+
+    @staticmethod
+    def load_shape_file(path: str = None,
+                        file_name: str = 'communes-dile-de-france-au-01-janvier.shp') -> gpd.GeoDataFrame:
+        """This method loads shape files in a GeoPandas DataFrame. By default the data of Île-de-France is loaded."""
+        if path is None:
+            for root, folders, files in os.walk('.'):
+                if file_name in files:
+                    path = root
+        return gpd.read_file(f'{path}/{file_name}')
+
+    @staticmethod
+    def turn_mutations_df_into_geodf(df: pd.DataFrame, crs: str = 'epsg:4326') -> gpd.GeoDataFrame:
+        df = df.copy()
+        df['long_lat'] = gpd.GeoSeries(map(Point, zip(df['longitude'], df['latitude'])))
+        return gpd.GeoDataFrame(df, geometry='long_lat', crs=crs)
 
 
 class Model:
@@ -279,3 +297,84 @@ class Scraper:
 
     def search(self) -> None:
         self.driver.find_element(By.ID, 'searchbox-searchbutton').click()
+
+
+class StreamlitHelpers:
+    @staticmethod
+    def get_title_html() -> str:
+        """
+        <div id='maplegend' class='maplegend'
+            style='position: absolute; z-index:9999; border:0px; background-color:rgba(255, 255, 255, 0.8);
+             border-radius:6px; padding: 10px; font-size:25px; left: 0px; top: 0px;'>
+
+        <div class='legend-title'>Visualization of price of mutation per communes & arrondissements </div>
+        <div class='legend-scale'><font size="3">Per commune / Île-de-France / between 2014 and 2021</font></div>
+        </div>
+        """
+
+    @staticmethod
+    def get_legend_html(df: Union[pd.DataFrame, gpd.GeoDataFrame], colors: list[str] = None) -> str:
+        if colors is None:
+            colors = ['#00ae53', '#86dc76', '#daf8aa',
+                      '#ffe6a4', '#ff9a61', '#ee0028']
+        values = np.linspace(df['valeurfonc'].min(), df['valeurfonc'].max(), num=7)
+        rounded_vals = np.around(values / 100_000) * 100_000
+
+        legend_html = "<div id='maplegend' class='maplegend' style='position: absolute; z-index:9999; " \
+                      "border:2px solid grey; background-color:rgba(255, 255, 255, 0.8); border-radius:6px; " \
+                      "padding: 10px; font-size:14px; right: 20px; top: 20px;'>"
+        legend_html += "<div class='legend-title'>Valeur fonciere</div>"
+        legend_html += "<div class='legend-scale'>"
+        legend_html += "<ul class='legend-labels'>"
+        legend_html += "<li><span style='background:{0};opacity:0.7;'></span> < {1}k € </li>".format(
+            colors[0], int(rounded_vals[1] / 1000))
+        for i in range(1, len(values) - 2):
+            legend_html += "<li><span style='background:{0};opacity:0.7;'></span>{1}k € - {2}k €</li>".format(
+                colors[i],
+                int(rounded_vals[i] / 1000),
+                int(rounded_vals[i + 1] / 1000))
+        legend_html += "<li><span style='background:{0};opacity:0.7;'></span> > {1}k € </li>".format(
+            colors[i + 1], int(rounded_vals[i + 1] / 1000))
+        legend_html += """</ul>
+        </div>
+        </div>
+        <style type='text/css'>
+          .maplegend .legend-title {
+            text-align: left;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 90%;
+            }
+          .maplegend .legend-scale ul {
+            margin: 0;
+            margin-bottom: 5px;
+            padding: 0;
+            float: left;
+            list-style: none;
+            }
+          .maplegend .legend-scale ul li {
+            font-size: 80%;
+            list-style: none;
+            margin-left: 0;
+            line-height: 18px;
+            margin-bottom: 2px;
+            }
+          .maplegend ul.legend-labels li span {
+            display: block;
+            float: left;
+            height: 16px;
+            width: 30px;
+            margin-right: 5px;
+            margin-left: 0;
+            border: 1px solid #999;
+            }
+          .maplegend .legend-source {
+            font-size: 80%;
+            color: #777;
+            clear: both;
+            }
+          .maplegend a {
+            color: #777;
+            }
+        </style>"""
+        return legend_html

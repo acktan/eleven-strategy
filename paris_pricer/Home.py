@@ -24,7 +24,7 @@ scraper = st.session_state['scraper']
 # Searching for the desired place
 scraper.search_place_with_url(st.session_state['place'])
 
-st.text_input('Type your search here ...', key='place')
+st.text_input(label='', key='place')
 
 # Retrieving the coordinates of the desired place
 latitude, longitude = scraper.get_coordinates()
