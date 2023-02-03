@@ -14,7 +14,7 @@ if 'scraper' not in st.session_state:
     st.session_state['scraper'] = Scraper()
 
 if 'model' not in st.session_state:
-    st.session_state['model'] = Model.load_pricing_model()
+    st.session_state['model'] = Model.load_lgbm_pricing_model()
 
 scraper = st.session_state['scraper']
 
@@ -26,10 +26,10 @@ scraper.search_place_with_url(scraper.get_suggestions()[0])
 # Retrieving the coordinates of the desired place
 latitude, longitude = scraper.get_coordinates()
 
-# df = Data.load_data_for_model()
+# Load the data
 if 'df' not in st.session_state:
-    df = Data.load_sample_df()
-    st.session_state['df'] = df
+    # st.session_state['df'] = Data.load_df(explode=False)
+    st.session_state['df'] = Data.load_data_for_lgbm()
 
 # Calculating the distance
 df_distance = st.session_state['df'].pipe(Data.calculate_distance, latitude=latitude, longitude=longitude)
@@ -39,7 +39,9 @@ model_data = df_distance.loc[[df_distance['distance'].argmin()], :].head(1).rese
 columns = st.columns(3)
 # Adding a metric with the price predictions for now
 with columns[0]:
+    # st.write('Before predicting')
     current_price = st.session_state['model'].predict(model_data)[0]
+    # st.write('After predicting')
     st.metric(label='Current price',
               value=f"{current_price:,.{2}f} €")
 # Adding a metric with the price predictions for in five years

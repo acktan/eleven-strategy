@@ -9,12 +9,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer, MinMaxScaler
+import streamlit as st
 
 import os
 import pickle
@@ -153,6 +154,13 @@ class Data:
         return df
 
     @classmethod
+    def load_data_for_lgbm(cls, path: str = None) -> pd.DataFrame:
+        df = cls.load_df(path=path, explode=False)
+        df = df.loc[df['libtypbien'].isin(['UN APPARTEMENT', 'UNE MAISON']), :]
+        df = df.loc[(df['valeurfonc'] > 1e4) & (df['valeurfonc'] <= 5 * 1e6), :]
+        return df
+
+    @classmethod
     def load_sample_df(cls, path: str = None) -> pd.DataFrame:
         file_name = 'mutations_d77_train_localized.csv'
         if path is None:
@@ -192,7 +200,9 @@ class Data:
             for root, folders, files in os.walk('.'):
                 if file_name in files:
                     path = root
+                    st.write(f'path found:{path}')
         gdf = gpd.read_file(f'{path}/{file_name}')
+        st.write('gdf loaded')
         gdf['nomcom'] = gdf['nomcom'].str.encode('ISO-8859-1').str.decode('utf-8')
         return gdf
 
@@ -223,7 +233,7 @@ class Data:
 
 class Model:
     @staticmethod
-    def create_pricing_model(df: pd.DataFrame = None, save: bool = True, saving_path: str = '.') -> ExtraTreesRegressor:
+    def create_pricing_model(df: pd.DataFrame = None, save: bool = True, saving_path: str = '.') -> Pipeline:
         """This method trains an ExtraTreesRegressor based on df."""
         if df is None:
             df = Data.load_data_for_model()
@@ -262,8 +272,55 @@ class Model:
         return pipe
 
     @staticmethod
-    def load_pricing_model(path: str = '.', file_name: str = 'pricing_model.pkl') -> Any:
+    def create_lgbm_pricing_model(df: pd.DataFrame = None, save: bool = True, saving_path: str = '.') -> Pipeline:
+        """This method trains an LGBMRegressor based on df."""
+        if df is None:
+            df = Data.load_data_for_lgbm()
+
+        numerical_features = ['sbati', 'latitude', 'longitude', 'anneemut']
+        categorical_features = ['coddep', 'libnatmut', 'libtypbien']
+        passthrough = ['nbapt1pp', 'nbapt2pp', 'nbapt3pp', 'nbapt4pp', 'nbapt5pp', 'nbmai1pp', 'nbmai2pp', 'nbmai3pp',
+                       'nbmai4pp', 'nbmai5pp']
+        considered_cols = numerical_features + categorical_features + passthrough
+
+        categorical_transformer = OneHotEncoder(handle_unknown='ignore')
+        numerical_transformer = MinMaxScaler()
+
+        y = df['valeurfonc']
+        X = df[considered_cols]
+
+        train_x, test_x, train_y, test_y = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        preprocessor = ColumnTransformer([('cat', categorical_transformer, categorical_features),
+                                          ('num', numerical_transformer, numerical_features)],
+                                         remainder="passthrough")
+
+        pipe = Pipeline([('preprocessor', preprocessor),
+                         ('regressor', RandomForestRegressor()),
+                         ])
+
+        pipe.fit(train_x, train_y)
+
+        if save:
+            with open(f'{saving_path}/lgbm_pricing_model.pkl', 'wb') as f:
+                pickle.dump(pipe, f)
+        return pipe
+
+    @staticmethod
+    def load_pricing_model(path: str = None, file_name: str = 'pricing_model.pkl') -> Any:
         """This method loads the trained pricing model from the disk."""
+        for root, folders, files in os.walk('.'):
+            if 'pricing_model.pkl' in files:
+                path = root
+        with open(f'{path}/{file_name}', 'rb') as f:
+            return pickle.load(f)
+
+    @staticmethod
+    def load_lgbm_pricing_model(path: str = '.', file_name: str = 'lgbm_pricing_model.pkl') -> Any:
+        """This method loads the trained LGBM pricing model from the disk."""
+        for root, folders, files in os.walk('.'):
+            if 'lgbm_pricing_model.pkl' in files:
+                path = root
         with open(f'{path}/{file_name}', 'rb') as f:
             return pickle.load(f)
 
@@ -308,7 +365,11 @@ class Scraper:
 
     def get_suggestions(self) -> list[str]:
         class_name = 'DAdBuc'
-        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
+        try:
+            WebDriverWait(self.driver, 1).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
+        except:
+            self.driver.find_element(By.ID, 'searchboxinput').click()
+            self.get_suggestions()
         suggestions = self.driver.find_element(By.CLASS_NAME, class_name)
         suggestions_list = suggestions.text.split('\n')
         return suggestions_list
@@ -400,3 +461,6 @@ class StreamlitHelpers:
     @staticmethod
     def create_price_distirbution_graph(df: Union[pd.DataFrame, gpd.GeoDataFrame]) -> Any:
         ...
+
+
+Model.create_lgbm_pricing_model()
