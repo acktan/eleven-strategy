@@ -16,7 +16,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer
 
-import ast
 import os
 import pickle
 import re
@@ -309,7 +308,7 @@ class Scraper:
 
     def get_suggestions(self) -> list[str]:
         class_name = 'DAdBuc'
-        WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
+        WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
         suggestions = self.driver.find_element(By.CLASS_NAME, class_name)
         suggestions_list = suggestions.text.split('\n')
         return suggestions_list
@@ -397,3 +396,7 @@ class StreamlitHelpers:
             }
         </style>"""
         return legend_html
+
+    @staticmethod
+    def create_price_distirbution_graph(df: Union[pd.DataFrame, gpd.GeoDataFrame]) -> Any:
+        ...

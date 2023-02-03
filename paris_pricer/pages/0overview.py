@@ -8,8 +8,6 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
-import os
-
 from helpers import Data, StreamlitHelpers
 
 # Loading the data
