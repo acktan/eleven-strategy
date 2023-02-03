@@ -280,8 +280,7 @@ class Scraper:
                     break
         webdriver_options = Options()
         webdriver_options.add_argument('--headless')
-        # self.driver = webdriver.Firefox(service=Service(executable_path=webdriver_path), options=webdriver_options)
-        self.driver = webdriver.Firefox(service=Service(executable_path=webdriver_path))
+        self.driver = webdriver.Firefox(service=Service(executable_path=webdriver_path), options=webdriver_options)
         self.driver.get(self.google_maps_url)
         self.remove_cookie_window()
 
