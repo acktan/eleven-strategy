@@ -15,7 +15,6 @@ from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, SplineTransformer, MinMaxScaler
-import streamlit as st
 
 import os
 import pickle
@@ -200,9 +199,7 @@ class Data:
             for root, folders, files in os.walk('.'):
                 if file_name in files:
                     path = root
-                    st.write(f'path found:{path}')
         gdf = gpd.read_file(f'{path}/{file_name}')
-        st.write('gdf loaded')
         gdf['nomcom'] = gdf['nomcom'].str.encode('ISO-8859-1').str.decode('utf-8')
         return gdf
 
@@ -461,6 +458,3 @@ class StreamlitHelpers:
     @staticmethod
     def create_price_distirbution_graph(df: Union[pd.DataFrame, gpd.GeoDataFrame]) -> Any:
         ...
-
-
-Model.create_lgbm_pricing_model()

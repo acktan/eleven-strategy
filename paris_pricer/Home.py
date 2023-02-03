@@ -39,9 +39,7 @@ model_data = df_distance.loc[[df_distance['distance'].argmin()], :].head(1).rese
 columns = st.columns(3)
 # Adding a metric with the price predictions for now
 with columns[0]:
-    # st.write('Before predicting')
     current_price = st.session_state['model'].predict(model_data)[0]
-    # st.write('After predicting')
     st.metric(label='Current price',
               value=f"{current_price:,.{2}f} €")
 # Adding a metric with the price predictions for in five years

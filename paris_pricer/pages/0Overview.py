@@ -7,24 +7,19 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
-st.write('External packages imported')
 
 from helpers import Data, StreamlitHelpers
-st.write('Helpers imported')
 
 # Loading the data
 if 'df_idf' not in st.session_state:
-    st.write('before df_idf loaded')
     st.session_state['df_idf'] = Data.load_shape_file()
-    st.write('df_idf loaded')
 
 if 'df_mut' not in st.session_state:
-    st.write(st.session_state)
-    # if 'df' in st.session_state:
-    #     st.session_state['df_mut'] = st.session_state['df'].copy()
-    # else:
-    #     st.session_state['df_mut'] = Data.load_df(explode=False)
-    st.session_state['df_mut'] = Data.load_df(explode=False)
+    if 'df' in st.session_state:
+        st.session_state['df_mut'] = st.session_state['df'].copy()
+    else:
+        st.session_state['df_mut'] = Data.load_df(explode=False)
+    # st.session_state['df_mut'] = Data.load_df(explode=False)
     st.session_state['df_mut'] = Data.turn_mutations_df_into_geodf(st.session_state['df_mut'],
                                                                    crs=st.session_state['df_idf'].crs)
 
